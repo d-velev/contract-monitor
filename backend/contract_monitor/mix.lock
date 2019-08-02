@@ -1,6 +1,6 @@
 %{
   "aebytecode": {:git, "https://github.com/aeternity/aebytecode.git", "2f4e1888c241a7347ffec855ab6761c2c2972f37", [ref: "2f4e188"]},
-  "aepp_sdk_elixir": {:git, "https://github.com/aeternity/aepp-sdk-elixir.git", "0b63b7df7e964c485219dacdbcb51e1f2b541690", [ref: "0b63b7df7e964c485219dacdbcb51e1f2b541690"]},
+  "aepp_sdk_elixir": {:git, "https://github.com/aeternity/aepp-sdk-elixir.git", "37ed1608fe051db09f536052d4bf0f718fad8fe0", [ref: "37ed1608fe051db09f536052d4bf0f718fad8fe0"]},
   "aeserialization": {:git, "https://github.com/aeternity/aeserialization.git", "816bf994ffb5cee218c3f22dc5fea296c9e0882e", [ref: "816bf99"]},
   "aesophia": {:git, "https://github.com/aeternity/aesophia.git", "dcae96ed21580b3b081cb955da9d8e6fd6879da1", [ref: "dcae96ed21580b3b081cb955da9d8e6fd6879da1"]},
   "artificery": {:hex, :artificery, "0.4.2", "3ded6e29e13113af52811c72f414d1e88f711410cac1b619ab3a2666bbd7efd4", [:mix], [], "hexpm"},

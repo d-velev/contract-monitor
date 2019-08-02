@@ -7,6 +7,10 @@ defmodule ContractMonitorWeb.NotificationChannel do
     Endpoint.broadcast!("room:notifications", "new_call", call_transaction)
   end
 
+  def notify_new_event(event) do
+    Endpoint.broadcast!("room:notifications", "new_event", event)
+  end
+
   def join("room:notifications", _message, socket) do
     {:ok, socket}
   end

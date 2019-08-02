@@ -2,6 +2,8 @@ defmodule ContractMonitor.ContractEventHandler do
   use GenServer
 
   alias Core.Listener
+  alias Core.Client
+  alias Utils.Encoding
   alias ContractMonitorWeb.NotificationChannel
 
   require Logger
@@ -25,6 +27,20 @@ defmodule ContractMonitor.ContractEventHandler do
       contract_address
     )
 
+    client =
+      Client.new(
+        %{
+          public: "ak_6A2vcm1Sz6aqJezkLCssUXcyZTX7X8D5UwbuS2fRJr9KkYpRU",
+          secret:
+            "a7a695f999b1872acb13d5b63a830a8ee060ba688a478a08c6e65dfad8a01cd70bb4ed7927f97b51e1bcb5e1340d12335b2a2b12c8bc5221d63c4bcb39d41e61"
+        },
+        "ae_uat",
+        "https://sdk-testnet.aepps.com/v2",
+        "https://sdk-testnet.aepps.com/v2"
+      )
+
+    Listener.subscribe_for_contract_events(client, self(), contract_address)
+
     {:reply, :ok, state}
   end
 
@@ -34,6 +50,16 @@ defmodule ContractMonitor.ContractEventHandler do
       ) do
     Logger.info(fn -> "Received new call transaction: #{inspect(call_transaction)}" end)
     NotificationChannel.notify_new_call(call_transaction)
+    {:noreply, state}
+  end
+
+  def handle_info(
+        {:contract_events, contract_event},
+        state
+      ) do
+    Logger.info(fn -> "Received new contract event: #{inspect(contract_event)}" end)
+    events = Enum.map(contract_event, fn event -> Encoding.prefix_decode_base64(event.data) end)
+    NotificationChannel.notify_new_event(%{"events" => events})
     {:noreply, state}
   end
 end
