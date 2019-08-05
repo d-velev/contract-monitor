@@ -3,7 +3,6 @@ defmodule ContractMonitor.ContractEventHandler do
 
   alias Core.Listener
   alias Core.Client
-  alias Utils.Encoding
   alias ContractMonitorWeb.NotificationChannel
 
   require Logger
@@ -54,12 +53,11 @@ defmodule ContractMonitor.ContractEventHandler do
   end
 
   def handle_info(
-        {:contract_events, contract_event},
+        {:contract_events, contract_events},
         state
       ) do
-    Logger.info(fn -> "Received new contract event: #{inspect(contract_event)}" end)
-    events = Enum.map(contract_event, fn event -> Encoding.prefix_decode_base64(event.data) end)
-    NotificationChannel.notify_new_event(%{"events" => events})
+    Logger.info(fn -> "Received new contract event: #{inspect(contract_events)}" end)
+    NotificationChannel.notify_new_event(%{"events" => contract_events})
     {:noreply, state}
   end
 end

@@ -1,23 +1,52 @@
 <template>
   <div id="app">
+    <h1>Contract monitor</h1>
     <div>
       <ae-input-plain placeholder="Contract address" v-model="contractAddress" />
     </div>
     <div>
-      <ae-button face="round" fill="primary" @click="submit">Monitor</ae-button>
+      <ae-button face="round" fill="primary" @click="submit(true)">Monitor</ae-button>
     </div>
     <div id="content">
-      <div id="calls-by-dates-chart" class="line-chart"><line-chart :chartData="callsByDates"/></div>
-      <div id="unique-users-by-dates-chart" class="line-chart"><line-chart :chartData="uniqueUsersByDates"/></div>
-      <div id="amounts-by-dates-chart" class="line-chart"><line-chart :chartData="amountsByDates"/></div>
-      <span>Events:</span>
-      <div id="event-logs"></div>
+      <div id="selectors">
+        <ae-check v-model="chartDays" value="3" type="radio" @change="submit(false)">3 days</ae-check>
+        <ae-check v-model="chartDays" value="7" type="radio" @change="submit(false)">7 days</ae-check>
+        <ae-check v-model="chartDays" value="30" type="radio" @change="submit(false)">30 days (default)</ae-check>
+      </div>
+      <div id="calls-by-dates-chart" class="line-chart"><line-chart :chartData="callsByDates" :options="callsByDates.options"/></div>
+      <div id="unique-users-by-dates-chart" class="line-chart"><line-chart :chartData="uniqueUsersByDates" :options="uniqueUsersByDates.options"/></div>
+      <div id="amounts-by-dates-chart" class="line-chart"><line-chart :chartData="amountsByDates" :options="amountsByDates.options"/></div>
+      <div>
+        <h2>Events </h2>
+        <table id="events">
+          <thead>
+            <tr>
+              <th id="topics">
+                Topics
+              </th>
+              <th>
+                Data
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="e in events" v-bind:key="e.data">
+              <td>
+                {{e.topics}}
+              </td>
+              <td>
+                {{e.data}}
+              </td>
+            </tr>
+          </tbody>
+      </table>
+    </div>
     </div>
   </div>
 </template>
 
 <script>
-import { AeInputPlain, AeButton } from "@aeternity/aepp-components"
+import { AeInputPlain, AeButton, AeCheck } from "@aeternity/aepp-components"
 
 import LineChart from './LineChart.js'
 
@@ -28,19 +57,22 @@ let moment = require('moment')
 export default {
   name: 'app',
   components: {
-    socket: null,
-    channel: null,
     AeInputPlain,
     AeButton,
+    AeCheck,
     LineChart
   },
   data() {
     return {
+      socket: null,
+      channel: null,
       contractAddress: "",
+      chartDays: 30,
       callsByDates: {},
       uniqueUsersByDates: {},
       uniqueUsersForToday: [],
-      amountsByDates: {}
+      amountsByDates: {},
+      events: []
     }
   },
   created: function(){
@@ -50,9 +82,6 @@ export default {
     this.socket.connect()
 
     this.channel.join()
-    .receive('ok', ({messages}) => console.log('Successful join'))
-    .receive('error', ({reason}) => console.log('Failed join', reason))
-    .receive('timeout', () => console.log('Timeout when joining'))
 
     let that = this;
     this.channel.on('new_call', function(msg) {
@@ -65,13 +94,15 @@ export default {
         that.fillData("callsByDates", result)
 
         if(!that.uniqueUsersForToday.includes(msg.tx.caller_id)) {
-            that.uniqueUsersByDates.datasets[0].data[that.uniqueUsersByDates.datasets[0].data.length - 1]++
+            that.uniqueUsersByDates.datasets[0].data[that.uniqueUsersByDates.datasets[0].data.length - 1]++;
+            that.uniqueUsersForToday.push(msg.tx.caller_id);
         }
+
         values = that.uniqueUsersByDates.datasets[0].data
         keys.forEach((key, i) => result[key] = values[i]);
-        that.fillData("uniqueUsers", result)
+        that.fillData("uniqueUsersByDates", result)
 
-        that.amountsByDates.datasets[0].data[that.amountsByDates.datasets[0].data.length - 1] += msg.tx.amount
+        that.amountsByDates.datasets[0].data[that.amountsByDates.datasets[0].data.length - 1] += msg.tx.amount / 1000000000000000000
         values = that.amountsByDates.datasets[0].data
         keys.forEach((key, i) => result[key] = values[i]);
         that.fillData("amountsByDates", result)
@@ -79,25 +110,22 @@ export default {
     )
 
     this.channel.on('new_event', function(events) {
-      events.events.forEach(function(event) {
-        console.log(event)
-        document.getElementById('event-logs').innerText += event + '\n'
-      })
+      that.events = that.events.concat(events.events)
     })
 
   },
   destroyed: function() {
-    this.socket.disconnect(function(){
-      console.log('Disconnected')
-    }, 1000, 'disconnect');
+    this.socket.disconnect(()=>{}, 1000, 'disconnect');
   },
   methods: {
     newDate(days) {
       return moment().add(days, 'd');
     },
-    submit() {
+    submit(clearLogs) {
+      if(this.contractAddress == "") return;
+
+      document.getElementsByTagName('body')[0].style.overflow = "scroll"
       document.getElementById('content').style.visibility = "visible"
-      document.getElementById('event-logs').innerText = ""
       let that = this
       axios.get(`http://localhost:4000/set-contract/${this.contractAddress}/edit`)
       axios.get(`https://testnet.mdw.aepps.com/middleware/contracts/transactions/address/${this.contractAddress}`)
@@ -125,7 +153,7 @@ export default {
             block_timestamps[el.data.hash] = el.data.time
           })
 
-          for (let i = 29; i >= 0; i--) {
+          for (let i = that.chartDays - 1; i >= 0; i--) {
             let d = new Date();
             d.setDate(d.getDate() - i);
             let key = (d.getMonth() + 1) + '-' + d.getDate() + '-' + d.getFullYear()
@@ -137,9 +165,9 @@ export default {
 
           let today = new Date();
           let n_days_back_date = new Date();
-          n_days_back_date.setDate(n_days_back_date.getDate() - 29)
+          n_days_back_date.setDate(n_days_back_date.getDate() - that.chartDays - 1)
           res.data.transactions.shift();
-          let filtered_transactions = res.data.transactions.filter(function(value, index, self) {
+          let filtered_transactions = res.data.transactions.filter(function(value) {
             return block_timestamps[value.block_hash] >= n_days_back_date.getTime()
               && block_timestamps[value.block_hash] <= today.getTime();
           })
@@ -161,7 +189,7 @@ export default {
                 that.uniqueUsersForToday.push(filtered_transactions[i].tx.caller_id)
               }
 
-            amounts_by_dates[key] += filtered_transactions[i].tx.amount
+            amounts_by_dates[key] += filtered_transactions[i].tx.amount / 1000000000000000000
           }
 
           that.fillData("callsByDates", calls_by_dates)
@@ -169,27 +197,76 @@ export default {
           that.fillData("amountsByDates", amounts_by_dates)
         })
       })
+
+      if(clearLogs) {
+        this.events = []
+      }
     },
-    fillData (key, data) {
+    fillData(key, data) {
       this[key] = {
         labels: Object.keys(data),
         datasets: [{
            data: Object.values(data),
-           label: key,
            borderWidth: 2,
-           borderColor: "#3e95cd",
+           borderColor: "#FF0D6A",
            fill: false,
-           pointRadius: 0
-        }]
+           pointRadius: 0,
+           hitRadius: 5
+        }],
+        options: {
+          legend: {
+            display: false
+          },
+          title: {
+            display: true,
+            text: this.keyToLabel(key)
+          },
+          scales: {
+              yAxes: [{
+                  ticks: {
+                      beginAtZero: true
+                  }
+              }]
+          }
+        }
       }
+    },
+    keyToLabel(key) {
+      let label = ""
+      switch(key){
+        case "callsByDates":
+          label = "Calls"
+          break;
+        case "uniqueUsersByDates":
+          label = "Unique users"
+          break;
+        case "amountsByDates":
+          label = "Volume (æ tokens)"
+          break;
+      }
+
+      return label;
     }
   }
 }
 </script>
 
 <style>
+body{
+  overflow: hidden;
+}
 #content{
   visibility: hidden;
+}
+#events{
+  margin: 0 auto 75px;
+  width: 50%;
+}
+#selectors{
+  margin: 10px 0 10px;
+}
+#topics{
+  width: 50%;
 }
 .ae-input-plain{
   margin-bottom: 20px;
@@ -199,6 +276,10 @@ export default {
 }
 .ae-button{
   margin-bottom: 20px;
+}
+.ae-check-button {
+  padding-left: 2.5rem !important;
+  padding-right: 3rem !important;
 }
 .line-chart{
   width: 33%;

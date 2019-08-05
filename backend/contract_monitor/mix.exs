@@ -34,7 +34,7 @@ defmodule ContractMonitor.MixProject do
     [
       {:aepp_sdk_elixir,
        git: "https://github.com/aeternity/aepp-sdk-elixir.git",
-       ref: "37ed1608fe051db09f536052d4bf0f718fad8fe0"},
+       ref: "d7bb124bf9750a70f6bd142658408ceb2f67038d"},
       {:cors_plug, "~> 2.0"},
       {:phoenix, "~> 1.4.9"},
       {:phoenix_pubsub, "~> 1.1"},
