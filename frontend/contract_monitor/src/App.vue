@@ -5,13 +5,13 @@
       <ae-input-plain placeholder="Contract address" v-model="contractAddress" />
     </div>
     <div>
-      <ae-button face="round" fill="primary" @click="submit(true)">Monitor</ae-button>
+      <ae-button face="round" fill="primary" @click="displayCharts(true)">Monitor</ae-button>
     </div>
     <div id="content">
       <div id="selectors">
-        <ae-check v-model="chartDays" value="3" type="radio" @change="submit(false)">3 days</ae-check>
-        <ae-check v-model="chartDays" value="7" type="radio" @change="submit(false)">7 days</ae-check>
-        <ae-check v-model="chartDays" value="30" type="radio" @change="submit(false)">30 days (default)</ae-check>
+        <ae-check v-model="chartDays" value="3" type="radio" @change="displayCharts(false)">3 days</ae-check>
+        <ae-check v-model="chartDays" value="7" type="radio" @change="displayCharts(false)">7 days</ae-check>
+        <ae-check v-model="chartDays" value="30" type="radio" @change="displayCharts(false)">30 days (default)</ae-check>
       </div>
       <div id="calls-by-dates-chart" class="line-chart"><line-chart :chartData="callsByDates" :options="callsByDates.options"/></div>
       <div id="unique-users-by-dates-chart" class="line-chart"><line-chart :chartData="uniqueUsersByDates" :options="uniqueUsersByDates.options"/></div>
@@ -51,8 +51,7 @@ import { AeInputPlain, AeButton, AeCheck } from "@aeternity/aepp-components"
 import LineChart from './LineChart.js'
 
 let phoenix = require('phoenix-js')
-let axios = require('axios');
-let moment = require('moment')
+let axios = require('axios')
 
 export default {
   name: 'app',
@@ -118,89 +117,110 @@ export default {
     this.socket.disconnect(()=>{}, 1000, 'disconnect');
   },
   methods: {
-    newDate(days) {
-      return moment().add(days, 'd');
-    },
-    submit(clearLogs) {
+    displayCharts(clearLogs) {
       if(this.contractAddress == "") return;
 
-      document.getElementsByTagName('body')[0].style.overflow = "scroll"
-      document.getElementById('content').style.visibility = "visible"
+      this.showCharts();
+
       let that = this
-      axios.get(`http://localhost:4000/set-contract/${this.contractAddress}/edit`)
+      axios.get(`http://localhost:4000/set-contract/${this.contractAddress}/edit`);
       axios.get(`https://testnet.mdw.aepps.com/middleware/contracts/transactions/address/${this.contractAddress}`)
       .then(async function(res){
-        let block_hashes = []
-        for(let i = 1; i < res.data.transactions.length; i++){
-          block_hashes.push(res.data.transactions[i].block_hash)
-        }
+        res.data.transactions.shift();
 
-        let unique_hashes = block_hashes.filter( function(value, index, self) {
-            return self.indexOf(value) === index;
-        })
+        let block_hashes = that.getUniqueBlockHashes(res.data.transactions);
 
-        let header_promises = []
-        for(let i = 0; i < unique_hashes.length; i++){
-          header_promises.push(axios.get(`https://sdk-testnet.aepps.com/v2/micro-blocks/hash/${unique_hashes[i]}/header`))
-        }
-        let block_timestamps = {}
-        let calls_by_dates = {}
-        let unique_users_by_dates = {}
-        let unique_user_count_by_dates = {}
-        let amounts_by_dates = {}
+        let header_promises = that.generateMicroBlockHeaderPromises(block_hashes);
+
+        let block_timestamps = {};
+        let chart_data = {
+          calls_by_dates: {},
+          unique_users_by_dates: {},
+          unique_user_count_by_dates: {},
+          amounts_by_dates: {}
+        };
         Promise.all(header_promises).then(async function(headers){
           headers.forEach(function(el){
-            block_timestamps[el.data.hash] = el.data.time
-          })
+            block_timestamps[el.data.hash] = el.data.time;
+          });
 
-          for (let i = that.chartDays - 1; i >= 0; i--) {
-            let d = new Date();
-            d.setDate(d.getDate() - i);
-            let key = (d.getMonth() + 1) + '-' + d.getDate() + '-' + d.getFullYear()
-            calls_by_dates[key] = 0
-            unique_users_by_dates[key] = []
-            unique_user_count_by_dates[key] = 0
-            amounts_by_dates[key] = 0
-          }
+          that.populateChartDataDays(chart_data);
 
-          let today = new Date();
-          let n_days_back_date = new Date();
-          n_days_back_date.setDate(n_days_back_date.getDate() - that.chartDays - 1)
-          res.data.transactions.shift();
-          let filtered_transactions = res.data.transactions.filter(function(value) {
-            return block_timestamps[value.block_hash] >= n_days_back_date.getTime()
-              && block_timestamps[value.block_hash] <= today.getTime();
-          })
+          let filtered_transactions =
+            that.filterTransactionsByCurrentTimeFrame(res.data.transactions, block_timestamps);
 
           for(let i = 0; i < filtered_transactions.length; i++){
             let d = new Date(block_timestamps[filtered_transactions[i].block_hash])
             let key = (d.getMonth() + 1) + '-' + d.getDate() + '-' + d.getFullYear()
-            calls_by_dates[key]++
+            chart_data.calls_by_dates[key]++
 
-            if(!unique_users_by_dates[key].includes(filtered_transactions[i].tx.caller_id)) {
-              unique_users_by_dates[key].push(filtered_transactions[i].tx.caller_id)
-              unique_user_count_by_dates[key]++;
+            if(!chart_data.unique_users_by_dates[key].includes(filtered_transactions[i].tx.caller_id)) {
+              chart_data.unique_users_by_dates[key].push(filtered_transactions[i].tx.caller_id)
+              chart_data.unique_user_count_by_dates[key]++;
             }
 
-            if(d.getMonth() == today.getMonth()
-              && d.getDate() == today.getDate()
-              && d.getFullYear() == today.getFullYear()
-              && !that.uniqueUsersForToday.includes(filtered_transactions[i].tx.caller_id)) {
-                that.uniqueUsersForToday.push(filtered_transactions[i].tx.caller_id)
-              }
+            that.addUniqueUserForToday(d, filtered_transactions[i].tx.caller_id);
 
-            amounts_by_dates[key] += filtered_transactions[i].tx.amount / 1000000000000000000
+            chart_data.amounts_by_dates[key] += filtered_transactions[i].tx.amount / 1000000000000000000
           }
 
-          that.fillData("callsByDates", calls_by_dates)
-          that.fillData("uniqueUsersByDates", unique_user_count_by_dates)
-          that.fillData("amountsByDates", amounts_by_dates)
+          that.fillData("callsByDates", chart_data.calls_by_dates)
+          that.fillData("uniqueUsersByDates", chart_data.unique_user_count_by_dates)
+          that.fillData("amountsByDates", chart_data.amounts_by_dates)
         })
       })
 
       if(clearLogs) {
         this.events = []
       }
+    },
+    showCharts() {
+      document.getElementsByTagName('body')[0].style.overflow = "scroll"
+      document.getElementById('content').style.visibility = "visible"
+    },
+    getUniqueBlockHashes(txs) {
+      return txs.map(function(tx) {
+          return tx.block_hash;
+        })
+        .filter(function(tx, index, self){
+            return self.indexOf(tx) === index;
+        })
+    },
+    generateMicroBlockHeaderPromises(block_hashes) {
+      return block_hashes.map(function(block_hash) {
+          return axios.get(`https://sdk-testnet.aepps.com/v2/micro-blocks/hash/${block_hash}/header`)
+        });
+    },
+    populateChartDataDays(chart_data) {
+      for (let i = this.chartDays - 1; i >= 0; i--) {
+        let d = new Date();
+        d.setDate(d.getDate() - i);
+        let key = (d.getMonth() + 1) + '-' + d.getDate() + '-' + d.getFullYear()
+
+        chart_data.calls_by_dates[key] = 0
+        chart_data.unique_users_by_dates[key] = []
+        chart_data.unique_user_count_by_dates[key] = 0
+        chart_data.amounts_by_dates[key] = 0
+      }
+    },
+    filterTransactionsByCurrentTimeFrame(txs, block_timestamps) {
+      let today = new Date();
+      let n_days_back_date = new Date();
+      n_days_back_date.setDate(n_days_back_date.getDate() - this.chartDays - 1)
+
+      return txs.filter(function(value) {
+        return block_timestamps[value.block_hash] >= n_days_back_date.getTime()
+          && block_timestamps[value.block_hash] <= today.getTime();
+      })
+    },
+    addUniqueUserForToday(current_date, caller_id) {
+      let today = new Date();
+      if(current_date.getMonth() == today.getMonth()
+        && current_date.getDate() == today.getDate()
+        && current_date.getFullYear() == today.getFullYear()
+        && !this.uniqueUsersForToday.includes(caller_id)) {
+          this.uniqueUsersForToday.push(caller_id)
+        }
     },
     fillData(key, data) {
       this[key] = {
