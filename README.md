@@ -8,11 +8,15 @@ Ensure that you have [Elixir](https://elixir-lang.org/) and [Node.js](https://no
 ## How to run
 - #### Backend
     `cd backend/contract_monitor/`
+    
     `mix deps.get`
+    
     `iex -S mix phx.server`
 - #### Frontend
     `cd frontend/contract_monitor/`
+    
     `npm i`
+    
     `npm run serve`
 
 ## Usage
